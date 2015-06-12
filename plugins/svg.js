@@ -91,6 +91,7 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 		return framedoc.getElementsByTagName('svg')[0]
 	}
 
+	
 	function convertPathToPDFLinesArgs(path){
 		'use strict'
 		// we will use 'lines' method call. it needs:
@@ -99,212 +100,324 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 		// - scale array [horizontal, vertical] ratios
 		// - style (stroke, fill, both)
 
-            var x = parseFloat(path[1])
-                ,y = parseFloat(path[2])
-                ,vectors = []
-                ,position = 3
-                ,len = path.length
-                ,_x = x
-                ,_y = y
-                ,lastCommand = 'M'
-                ,thisCommand = 'M';
 
-            //MmZzLlHhVvCcSsQqTtAa
-            //____________XXXXXX__    
+		var pos = 0,
+			lines = [],
+			thisCmd = 'M',
+			lastCmd = '',
+			nextLastCmd = '',
+			regr = /[MmLlHhVvCcSsQqTtAaZz]|-?[0-9]+(?:\.[0-9]+)?(?:[eE][-+][0-9]+)?/g,
+			match,
+			x = 0,
+			y = 0,
+			dx,
+			dy,
+			next = function(){
+				if(Array.isArray(path)){
+					if(pos >= path.length) return null;
+					return path[pos++];
+				}
+				var ret = regr.exec(path);
+				if(!ret) return null;
+				return ret[0];
+			},
+			posBack = function(match){
+				if(Array.isArray(path)){
+					pos--;
+				}else{
+					regr.lastIndex = regr.lastIndex - match.length;
+				}
+			};
+		while ((match = next()) !== null) {
+			var vals = [];
+			if (isNaN(match)) {
+				thisCmd = match;
+			} else {
+				thisCmd = lastCmd;
+				posBack(match);
+			}
+			if (thisCmd === 'M' && lastCmd === thisCmd) {
+				thisCmd = 'L';
+			}else if (thisCmd === 'm' && lastCmd === thisCmd) {
+				thisCmd = 'l';
+			}
+			dx=0;
+			dy=0;
+			nextLastCmd = thisCmd;
+			switch (thisCmd) {
+				case 'M':
+					if(lines.length && lastCmd !== 'z'){
+						lines[lines.length] = 'h';
+						vals[0] = cleanNum(next());
+						vals[1] = cleanNum(next());
+						dx = vals[0] - x;
+						dy = vals[1] - y;
 
-            while (position < len) {
-                thisCommand = path[position];
-                if (!isNaN(parseFloat(thisCommand))) {
-                    thisCommand = lastcommand;
-                    position--;
-                }
-                switch (thisCommand) {
-                    case 'm':
-                        vectors.push(['h']);
-                        var m = [
-                            parseFloat(path[position + 1]),
-                            parseFloat(path[position + 2])
-                        ];
-                        vectors.push(m)
-                        position += 3;
-                        _x += m[0];
-                        _y += m[1];
-                        lastcommand = 'm'
-                        break;
-                    case 'M':
-                        vectors.push(['h']);
-                        var M = [
-                            parseFloat(path[position + 1]) - _x,
-                            parseFloat(path[position + 2]) - _y
-                        ];
-                        vectors.push(M)
-                        position += 3;
-                        _x += M[0];
-                        _y += M[1];
-                        lastcommand = 'M'
-                        break;
-                    case 'c':
-                        var c = [
-                            parseFloat(path[position + 1]),
-                            parseFloat(path[position + 2]),
-                            parseFloat(path[position + 3]),
-                            parseFloat(path[position + 4]),
-                            parseFloat(path[position + 5]),
-                            parseFloat(path[position + 6])
-                        ];
-                        vectors.push(c);
-                        position += 7;
-                        _x += c[4];
-                        _y += c[5];
-                        lastcommand = 'c'
-                        break
-                    case 'C':
-                        var C = [
-                            parseFloat(path[position + 1]) - _x,
-                            parseFloat(path[position + 2]) - _y,
-                            parseFloat(path[position + 3]) - _x,
-                            parseFloat(path[position + 4]) - _y,
-                            parseFloat(path[position + 5]) - _x,
-                            parseFloat(path[position + 6]) - _y
-                        ];
-                        vectors.push(C);
-                        position += 7;
-                        _x += C[4];
-                        _y += C[5];
-                        lastcommand = 'C'
-                        break;
-                    case 'l':
-                        var l = [
-                            parseFloat(path[position + 1]),
-                            parseFloat(path[position + 2])
-                        ];
-                        vectors.push(l)
-                        position += 3;
-                        _x += l[0];
-                        _y += l[1];
-                        lastcommand = 'l'
-                        break;
-                    case 'L':
-                        var L = [
-                            parseFloat(path[position + 1]) - _x,
-                            parseFloat(path[position + 2]) - _y
-                        ];
-                        vectors.push(L)
-                        position += 3;
-                        _x += L[0];
-                        _y += L[1];
+					}else{
+						vals[0] = cleanNum(next(), -x);
+						vals[1] = cleanNum(next(), -y);
+						dx = vals[0];
+						dy = vals[1];
+					}
+					thisCmd = 'm';
+					break;
+				case 'm':
+					if(lines.length && lastCmd !== 'z'){
+						lines[lines.length] = 'h';
+						vals[0] = cleanNum(next(),+x);
+						vals[1] = cleanNum(next(),+y);
+						dx = vals[0] - x;
+						dy = vals[1] - y;
+					}else{
+						vals[0] = cleanNum(next());
+						vals[1] = cleanNum(next());
+						dx = vals[0];
+						dy = vals[1];
+					}
+					break;
+				case 'L':
+					vals[0] = cleanNum(next(), -x);
+					vals[1] = cleanNum(next(), -y);
+					dx = vals[0];
+					dy = vals[1];
+					thisCmd = 'l';
+					break;
+				case 'l':
+					vals[0] = cleanNum(next());
+					vals[1] = cleanNum(next());
+					dx = vals[0];
+					dy = vals[1];
+					break;
+				case 'H':
+					vals[0] = cleanNum(next(), -x);
+					vals[1] = 0;
+					thisCmd = 'l';
+					dx = vals[0];
+					break;
+				case 'h':
+					vals[0] = cleanNum(next());
+					vals[1] = 0;
+					thisCmd = 'l';
+					dx = vals[0];
+					break;
+				case 'V':
+					vals[0] = 0;
+					vals[1] = cleanNum(next(), -y);
+					thisCmd = 'l';
+					dy = vals[1];
+					break;
+				case 'v':
+					vals[0] = x;
+					vals[1] = cleanNum(next());
+					thisCmd = 'l';
+					dy = vals[1];
+					break;
+				case 'C':
+					vals[0] = cleanNum(next(), -x);
+					vals[1] = cleanNum(next(), -y);
+					vals[2] = cleanNum(next(), -x);
+					vals[3] = cleanNum(next(), -y);
+					vals[4] = cleanNum(next(), -x);
+					vals[5] = cleanNum(next(), -y);
+					dx = vals[4];
+					dy = vals[5];
+					thisCmd = 'c';
+					break;
+				case 'c':
+					vals[0] = cleanNum(next());
+					vals[1] = cleanNum(next());
+					vals[2] = cleanNum(next());
+					vals[3] = cleanNum(next());
+					vals[4] = cleanNum(next());
+					vals[5] = cleanNum(next());
+					dx = vals[4];
+					dy = vals[5];
+					thisCmd = 'c';
+					break;
+				case 'S':
+					var lastPath = lines[lines.length - 1];
+					switch (lastCmd) {
+						case 'c':
+						case 'C':
+						case 'S':
+						case 's':
+							vals[0] = lastPath[4] - lastPath[2];
+							vals[1] = lastPath[5] - lastPath[3];
+							break;
+						default:
+							vals[0] = 0;
+							vals[1] = 0;
+							break;
+					}
 
-                        lastcommand = 'L'
-                        break;
-                    case 'v':
-                        var l = [
-                            0,
-                            parseFloat(path[position + 1])
-                        ];
-                        vectors.push(l)
-                        position += 2;
-                        _y += l[1];
-                        lastcommand = 'v'
-                        break;
-                    case 'V':
-                        var L = [
-                            0,
-                            parseFloat(path[position + 1]) - _y
-                        ];
-                        vectors.push(L);
-                        position += 2;
-                        _y += L[1];
-                        lastcommand = 'V'
-                        break;
-                    case 'h':
-                        var h = [
-                            parseFloat(path[position + 1]),
-                            0
-                        ];
-                        vectors.push(h);
-                        position += 2;
-                        _x += h[0];
-                        lastcommand = 'h'
-                        break;
-                    case 'H':
-                        var H = [
-                            parseFloat(path[position + 1]) - _x,
-                            0
-                        ];
-                        vectors.push(H);
-                        position += 2;
-                        _x += H[0];
-                        lastcommand = 'H'
-                        break;
-                    case 'A':
-                        //A rx ry x-axis-rotation large-arc-flag sweep-flag x y
-                        var rx = parseFloat(path[position + 1]);
-                        var ry = parseFloat(path[position + 2]);
-                        var rotation = parseFloat(path[position + 3]);
-                        var largeArc = parseInt(path[position + 4]);
-                        var sweep = parseInt(path[position + 5]);
-                        var x = parseFloat(path[position + 6]);
-                        var y = parseFloat(path[position + 7]);
+					vals[2] = cleanNum(next(), -x);
+					vals[3] = cleanNum(next(), -y);
+					vals[4] = cleanNum(next(), -x);
+					vals[5] = cleanNum(next(), -y);
+					thisCmd = 'c';
+					dx = vals[4];
+					dy = vals[5];
+					break;
+				case 's':
+					var lastPath = lines[lines.length - 1];
+					switch (lastCmd) {
+						case 'c':
+						case 'C':
+						case 's':
+						case 'S':
+							vals[0] = lastPath[4] - lastPath[2];
+							vals[1] = lastPath[5] - lastPath[3];
+							break;
+						default:
+							vals[0] = x;
+							vals[1] = y;
+							break;
+					}
+					vals[2] = cleanNum(next());
+					vals[3] = cleanNum(next());
+					vals[4] = cleanNum(next());
+					vals[5] = cleanNum(next());
+					thisCmd = 'c';
+					dx = vals[4];
+					dy = vals[5];
+					break;
+				case 'Q':
+					vals[0] = cleanNum(next(), -x);
+					vals[1] = cleanNum(next(), -y);
+					vals[2] = vals[0];
+					vals[3] = vals[1];
+					vals[4] = cleanNum(next(), -x);
+					vals[5] = cleanNum(next(), -y);
+					thisCmd = 'c';
+					dx = vals[4];
+					dy = vals[5];
+					break;
+				case 'q':
+					vals[0] = cleanNum(next());
+					vals[1] = cleanNum(next());
+					vals[2] = vals[0];
+					vals[3] = vals[1];
+					vals[4] = cleanNum(next());
+					vals[5] = cleanNum(next());
+					thisCmd = 'c';
+					dx = vals[4];
+					dy = vals[5];
+					break;
+				case 'T':
+					var lastPath = lines[lines.length - 1];
+					switch (lastCmd) {
+						case 'c':
+						case 'C':
+						case 't':
+						case 'T':
+							vals[0] = lastPath[4] - lastPath[2];
+							vals[1] = lastPath[5] - lastPath[3];
+							break;
+						default:
+							vals[0] = x;
+							vals[1] = y;
+							break;
+					}
+					vals[2] = vals[0];
+					vals[3] = vals[1];
+					vals[4] = cleanNum(next(), -x);
+					vals[5] = cleanNum(next(), -y);
+					thisCmd = 'c';
+					dx = vals[4];
+					dy = vals[5];
+					break;
+				case 't':
+					var lastPath = lines[lines.length - 1];
+					switch (lastCmd) {
+						case 'c':
+						case 'C':
+						case 't':
+						case 'T':
+							vals[0] = lastPath[4] - lastPath[2];
+							vals[1] = lastPath[5] - lastPath[3];
+							break;
+						default:
+							vals[0] = x;
+							vals[1] = y;
+							break;
+					}
+					vals[2] = vals[0];
+					vals[3] = vals[1];
+					vals[4] = cleanNum(next());
+					vals[5] = cleanNum(next());
+					thisCmd = 'c';
+					dx =  vals[4];
+					dy =  vals[5];
+					break;
+				case 'A':
+					vals = arc2curve(
+						x,
+						y,
+						parseFloat(next()), // rx
+						parseFloat(next()), // ry
+						parseFloat(next()), // rotation
+						parseInt(next()), //largeArc
+						parseInt(next()), //sweep
+						parseFloat(next()), // x
+						parseFloat(next()) // y
+					);
+					vals[0] -= x;
+					vals[1] -= y;
+					vals[2] -= x;
+					vals[3] -= y;
+					vals[4] -= x;
+					vals[5] -= y;
+					thisCmd = 'c';
+					dx = vals[4];
+					dy = vals[5];
+					break;
+				case 'a':        
+					vals = arc2curve(
+						x,
+						y,
+						parseFloat(next()), // rx
+						parseFloat(next()), // ry
+						parseFloat(next()), // rotation
+						parseInt(next()), //largeArc
+						parseInt(next()), //sweep
+						parseFloat(next()) + x, // x
+						parseFloat(next()) + y // y
+					);
+					vals[0] -= x;
+					vals[1] -= y;
+					vals[2] -= x;
+					vals[3] -= y;
+					vals[4] -= x;
+					vals[5] -= y;
+					thisCmd = 'c';
+					dx = vals[4];
+					dy = vals[5];
+					break;
+				case 'z':
+				case 'Z':
+					lines[lines.length] = ['h'];
+					nextLastCmd = 'z';
+					break;
+			}
+			x = x + dx;
+			y = y + dy;
+			lastCmd = nextLastCmd;
+			if(vals.length > 0){
+				lines[lines.length] = vals;
+			}
+		}
+		var xy = lines.splice(0,1);
+		return [xy[0][0], xy[0][1], lines]; 
 
-                        var A = [];
+	}
 
-                        A = arc2curve(_x, _y, rx, ry, rotation, largeArc, sweep, x, y);
+	function cleanNum(str, add) {
+		if(!add) add = 0;
+		//str = parseFloat(str) + add;
+		//str = str.toFixed(2);
+		return parseFloat(str) + add;
+	}
 
-                        for (var a = 0, _a = A.length; a < _a; a += 6) {
-                            var _A = [
-                                A[a] - _x,
-                                A[a + 1] - _y,
-                                A[a + 2] - _x,
-                                A[a + 3] - _y,
-                                A[a + 4] - _x,
-                                A[a + 5] - _y,
-                            ];
-                            vectors.push(_A);
-                            _x += _A[4];
-                            _y += _A[5];
-                        }
-
-                        position += 8
-                        lastcommand = 'C'
-                        break;
-                    case 'a':
-                        //A rx ry x-axis-rotation large-arc-flag sweep-flag x y
-                        var rx = parseFloat(path[position + 1]);
-                        var ry = parseFloat(path[position + 2]);
-                        var rotation = parseFloat(path[position + 3]);
-                        var largeArc = parseInt(path[position + 4]);
-                        var sweep = parseInt(path[position + 5]);
-                        var x = parseFloat(path[position + 6]) + _x;
-                        var y = parseFloat(path[position + 7]) + _y;
-
-                        var A = [];
-
-                        A = arc2curve(_x, _y, rx, ry, rotation, largeArc, sweep, x, y);
-
-                        for (var a = 0, _a = A.length; a < _a; a += 6) {
-                            var _A = [
-                                A[a] - _x,
-                                A[a + 1] - _y,
-                                A[a + 2] - _x,
-                                A[a + 3] - _y,
-                                A[a + 4] - _x,
-                                A[a + 5] - _y,
-                            ];
-                            vectors.push(_A);
-                            _x += _A[4];
-                            _y += _A[5];
-                        }
-
-                        position += 8
-                        lastcommand = 'C'
-                        break;
-                    default:
-                        position += 1
-                        break;
-                }
-            }
-            return [x, y, vectors]
-        }
         var arc2curve = function(x1, y1, rx, ry, angle, large_arc_flag, sweep_flag, x2, y2, recursive) {
             // for more information of where this math came from visit:
             // http://www.w3.org/TR/SVG11/implnote.html#ArcImplementationNotes
