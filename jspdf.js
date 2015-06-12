@@ -1377,7 +1377,9 @@ var jsPDF = (function(global) {
 
 			for (i = 0; i < l; i++) {
 				leg = lines[i];
-				if (leg.length === 2) {
+				if (leg.length === 1 && leg[0] == 'h') {
+                			out('h');
+                		} else if (leg.length === 2) {
 					// simple line
 					x4 = leg[0] * scalex + x4; // here last x4 was prior ending point
 					y4 = leg[1] * scaley + y4; // here last y4 was prior ending point
