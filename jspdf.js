@@ -351,6 +351,7 @@ var jsPDF = (function(global) {
 				}
 			}
 			out('>>');
+			events.publish('putResourceDictionary');
 			out('/XObject <<');
 			putXobjectDict();
 			out('>>');
@@ -778,16 +779,19 @@ var jsPDF = (function(global) {
 				fontName = fontName.toLowerCase();
 			}
 			switch(fontName){
+			case 'helvetica':
 			case 'sans-serif':
 			case 'verdana':
 			case 'arial':
 				fontName = 'helvetica';
 				break;
+			case 'courier':
 			case 'fixed':
 			case 'monospace':
 			case 'terminal':
 				fontName = 'courier';
 				break;
+			case 'times':
 			case 'serif':
 			case 'cursive':
 			case 'fantasy':
