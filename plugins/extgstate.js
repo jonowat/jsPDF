@@ -12,9 +12,13 @@ jsPDFAPI.setOpacity = function(fillOpacity, strokeOpacity){
 			if(fillOpacity === null && strokeOpacity === null) return;
 			if(fillOpacity !== null){
 				fillOpacity = Math.max(0, Math.min(1, fillOpacity));
+			}else{
+				fillOpacity = 1;
 			}
 			if(strokeOpacity !== null){
 				strokeOpacity = Math.max(0, Math.min(1, strokeOpacity));
+			}else{
+				strokeOpacity = 1;
 			}
 
 			if(!this.internal.collections.opacities)this.internal.collections.opacities={};
