@@ -81,10 +81,13 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 	}
 
 	function attachSVGToWorkerNode(svgtext, frame){
-		var framedoc = ( frame.contentWindow || frame.contentDocument ).document
-		framedoc.write(svgtext)
-		framedoc.close()
-		return framedoc.getElementsByTagName('svg')[0]
+		if(typeof svgtext == 'string'){
+			var framedoc = ( frame.contentWindow || frame.contentDocument ).document
+			framedoc.write(svgtext)
+			framedoc.close()
+			return framedoc.getElementsByTagName('svg')[0]
+		}
+		return svgtext.childNodes[0];
 	}
 
 	
@@ -98,7 +101,8 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 
 
 		var pos = 0,
-			lines = [],
+			paths = [],
+			subPath = [],
 			thisCmd = 'M',
 			lastCmd = '',
 			nextLastCmd = '',
@@ -114,7 +118,7 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 					return path[pos++];
 				}
 				var ret = regr.exec(path);
-				if(!ret) return null;
+				if(ret === null) return null;
 				return ret[0];
 			},
 			posBack = function(match){
@@ -142,23 +146,25 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 			nextLastCmd = thisCmd;
 			switch (thisCmd) {
 				case 'M':
-					if(lines.length){
-						lines[lines.length] = 'h';
-						vals[0] = cleanNum(next());
-						vals[1] = cleanNum(next());
-						dx = vals[0] - x;
-						dy = vals[1] - y;
+					if(subPath.length){
+						paths.push(subPath.slice());
+						subPath = [];
 					}
+					vals[0] = cleanNum(next());
+					vals[1] = cleanNum(next());
+					dx = vals[0] - x;
+					dy = vals[1] - y;
 					thisCmd = 'm';
 					break;
 				case 'm':
-					if(lines.length){
-						lines[lines.length] = 'h';
-						vals[0] = cleanNum(next(),+x);
-						vals[1] = cleanNum(next(),+y);
-						dx = vals[0] - x;
-						dy = vals[1] - y;
+					if(subPath.length){
+						paths.push(subPath.slice());
+						subPath = [];
 					}
+					vals[0] = cleanNum(next(),+x);
+					vals[1] = cleanNum(next(),+y);
+					dx = vals[0] - x;
+					dy = vals[1] - y;
 					break;
 				case 'L':
 					vals[0] = cleanNum(next(), -x);
@@ -220,7 +226,7 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 					thisCmd = 'c';
 					break;
 				case 'S':
-					var lastPath = lines[lines.length - 1];
+					var lastPath = subPath[subPath.length - 1];;
 					switch (lastCmd) {
 						case 'c':
 						case 'C':
@@ -244,7 +250,7 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 					dy = vals[5];
 					break;
 				case 's':
-					var lastPath = lines[lines.length - 1];
+					var lastPath = subPath[subPath.length - 1];;
 					switch (lastCmd) {
 						case 'c':
 						case 'C':
@@ -289,7 +295,7 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 					dy = vals[5];
 					break;
 				case 'T':
-					var lastPath = lines[lines.length - 1];
+					var lastPath = subPath[subPath.length - 1];;
 					switch (lastCmd) {
 						case 'c':
 						case 'C':
@@ -312,7 +318,7 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 					dy = vals[5];
 					break;
 				case 't':
-					var lastPath = lines[lines.length - 1];
+					var lastPath = subPath[subPath.length - 1];;
 					switch (lastCmd) {
 						case 'c':
 						case 'C':
@@ -346,15 +352,19 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 						parseFloat(next()), // x
 						parseFloat(next()) // y
 					);
-					vals[0] -= x;
-					vals[1] -= y;
-					vals[2] -= x;
-					vals[3] -= y;
-					vals[4] -= x;
-					vals[5] -= y;
+					for(var a=0;a<vals.length;a+=2){
+						if(a && a%6===0){
+							x += vals[4];
+							y += vals[5];
+							subPath.push(vals.splice(a-6,6));
+							a=0;
+						}
+						vals[a] -= x;
+						vals[a+1] -= y;
+					}
 					thisCmd = 'c';
-					dx = vals[4];
-					dy = vals[5];
+					dx = vals[4]||0;
+					dy = vals[5]||0;
 					break;
 				case 'a':        
 					vals = arc2curve(
@@ -368,19 +378,27 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 						parseFloat(next()) + x, // x
 						parseFloat(next()) + y // y
 					);
-					vals[0] -= x;
-					vals[1] -= y;
-					vals[2] -= x;
-					vals[3] -= y;
-					vals[4] -= x;
-					vals[5] -= y;
+					for(var a=0;a<vals.length;a+=2){
+						if(a && a%6===0){
+							x += vals[4];
+							y += vals[5];
+							subPath.push(vals.splice(a-6,6));
+							a=0;
+						}
+						vals[a] -= x;
+						vals[a+1] -= y;
+					}
 					thisCmd = 'c';
-					dx = vals[4];
-					dy = vals[5];
+					dx = vals[4]||0;
+					dy = vals[5]||0;
 					break;
 				case 'z':
 				case 'Z':
-					lines[lines.length] = 'z';
+					dx = subPath[0][0] - x;
+					dy = subPath[0][1] - y;
+					subPath.push('z');
+					paths.push(subPath.slice());
+					subPath = [];
 					nextLastCmd = 'z';
 					break;
 			}
@@ -388,12 +406,13 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 			y = y + dy;
 			lastCmd = nextLastCmd;
 			if(vals.length > 0){
-				lines[lines.length] = vals;
+				subPath.push(vals);
 			}
 		}
-		var xy = lines.splice(0,1);
-		return [xy[0][0], xy[0][1], lines]; 
-
+		if(subPath.length){
+			paths.push(subPath);
+		}
+		return paths;
 	}
 
 	function cleanNum(str, add) {
@@ -404,6 +423,10 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 	}
 
         var arc2curve = function(x1, y1, rx, ry, angle, large_arc_flag, sweep_flag, x2, y2, recursive) {
+		if(x1===x2 && y1===y2) return [];
+		if(rx==0 || ry==0){
+			return [x1 + (x2-x1)/3, y1 + (y2-y1)/3, x2 - (x2-x1)/3, y2 - (y2-y1)/3, x2, y2];
+		}
             // for more information of where this math came from visit:
             // http://www.w3.org/TR/SVG11/implnote.html#ArcImplementationNotes
             var _120 = Math.PI * 120 / 180,
@@ -503,7 +526,15 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
             svgw = parseFloat(svgnode.getAttribute('width')),
             svgh = parseFloat(svgnode.getAttribute('height')),
 	    pagew = this.internal.pageSize.width,
-	    pageh = this.internal.pageSize.height
+	    pageh = this.internal.pageSize.height,
+	    viewBox = svgnode.getAttribute('viewBox')
+	    if(viewBox) viewBox = viewBox.split(/[\s,]+/);
+		if(svgw && svgw.substr(svgw.length-1,1)=='%'){
+			svgw = parseFloat(viewBox[2]);
+		}
+		if(svgh && svgh.substr(svgh.length-1,1)=='%'){
+			svgh = parseFloat(viewBox[3]);
+		}
 
             if (svgw && svgh) {
                 // setting both w and h makes image stretch to size.
@@ -545,6 +576,8 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
             }
 
         var getColor = function(hex) {
+        	
+		if(hex == 'inherit') return hex;
             var rgba = {
                 r: 0,
                 g: 0,
@@ -557,16 +590,21 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
                 return rgba;
             }
             if (hex.substring(0, 3) == 'rgb') {
-                var re = /rgb(a)?\(([0-9]+)[,\s]+([0-9]+)[,\s]+([0-9]+)[,\s]?([0-9.]+)?\)/;
-                var matches = re.exec(hex);
-                if (matches) {
-                    rgba.r = parseInt(matches[2]);
-                    rgba.g = parseInt(matches[3]);
-                    rgba.b = parseInt(matches[4]);
-                    if (matches[1] && matches[5]) {
-                        rgba.a = parseFloat(matches[5]);
-                    }
-                }
+                var re = /rgb(a)?\(([0-9.]+(%)?)\s*,\s*([0-9.]+(%)?)\s*,\s*([0-9.]+(%)?)\s*(?:,\s*([0-9.]+))?\)/;
+		var matches = re.exec(hex);
+		if (matches) {
+			rgba.r = parseFloat(matches[2]);
+			rgba.g = parseFloat(matches[4]);
+			rgba.b = parseFloat(matches[6]);
+			
+			if(matches[3]){ rgba.r = rgba.r * 255 / 100; }
+			if(matches[5]){ rgba.g = rgba.g * 255 / 100; }
+			if(matches[7]){ rgba.b = rgba.b * 255 / 100; }
+			
+			if (matches[1] && matches[8]) {
+				rgba.a = parseFloat(matches[8]);
+			}
+		}
             } else if (hex.substring(0, 1) === '#') {
                 if (hex.length == 4) {
                     rgba.r = parseInt(hex.substring(1, 2) + hex.substring(1, 2), 16);
@@ -579,49 +617,156 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
                 }
             } else {
                 var colors = {
-                    aqua: [0, 255, 255],
-                    azure: [240, 255, 255],
-                    beige: [245, 245, 220],
-                    black: [0, 0, 0],
-                    blue: [0, 0, 255],
-                    brown: [165, 42, 42],
-                    cyan: [0, 255, 255],
-                    darkblue: [0, 0, 139],
-                    darkcyan: [0, 139, 139],
-                    darkgrey: [169, 169, 169],
-                    darkgreen: [0, 100, 0],
-                    darkkhaki: [189, 183, 107],
-                    darkmagenta: [139, 0, 139],
-                    darkolivegreen: [85, 107, 47],
-                    darkorange: [255, 140, 0],
-                    darkorchid: [153, 50, 204],
-                    darkred: [139, 0, 0],
-                    darksalmon: [233, 150, 122],
-                    darkviolet: [148, 0, 211],
-                    fuchsia: [255, 0, 255],
-                    gold: [255, 215, 0],
-                    green: [0, 128, 0],
-                    indigo: [75, 0, 130],
-                    khaki: [240, 230, 140],
-                    lightblue: [173, 216, 230],
-                    lightcyan: [224, 255, 255],
-                    lightgreen: [144, 238, 144],
-                    lightgrey: [211, 211, 211],
-                    lightpink: [255, 182, 193],
-                    lightyellow: [255, 255, 224],
-                    lime: [0, 255, 0],
-                    magenta: [255, 0, 255],
-                    maroon: [128, 0, 0],
-                    navy: [0, 0, 128],
-                    olive: [128, 128, 0],
-                    orange: [255, 165, 0],
-                    pink: [255, 192, 203],
-                    purple: [128, 0, 128],
-                    violet: [128, 0, 128],
-                    red: [255, 0, 0],
-                    silver: [192, 192, 192],
-                    white: [255, 255, 255],
-                    yellow: [255, 255, 0],
+                    
+			aliceblue: [240, 248, 255],
+			antiquewhite: [250, 235, 215],
+			aqua: [0, 255, 255],
+			aquamarine: [127, 255, 212],
+			azure: [240, 255, 255],
+			beige: [245, 245, 220],
+			bisque: [255, 228, 196],
+			black: [0, 0, 0],
+			blanchedalmond: [255, 235, 205],
+			blue: [0, 0, 255],
+			blueviolet: [138, 43, 226],
+			brown: [165, 42, 42],
+			burlywood: [222, 184, 135],
+			burntsienna: [234, 126, 93],
+			cadetblue: [95, 158, 160],
+			chartreuse: [127, 255, 0],
+			chocolate: [210, 105, 30],
+			coral: [255, 127, 80],
+			cornflowerblue: [100, 149, 237],
+			cornsilk: [255, 248, 220],
+			crimson: [220, 20, 60],
+			cyan: [0, 255, 255],
+			darkblue: [0, 0, 139],
+			darkcyan: [0, 139, 139],
+			darkgoldenrod: [184, 134, 11],
+			darkgray: [169, 169, 169],
+			darkgreen: [0, 100, 0],
+			darkgrey: [169, 169, 169],
+			darkkhaki: [189, 183, 107],
+			darkmagenta: [139, 0, 139],
+			darkolivegreen: [85, 107, 47],
+			darkorange: [255, 140, 0],
+			darkorchid: [153, 50, 204],
+			darkred: [139, 0, 0],
+			darksalmon: [233, 150, 122],
+			darkseagreen: [143, 188, 143],
+			darkslateblue: [72, 61, 139],
+			darkslategray: [47, 79, 79],
+			darkslategrey: [47, 79, 79],
+			darkturquoise: [0, 206, 209],
+			darkviolet: [148, 0, 211],
+			deeppink: [255, 20, 147],
+			deepskyblue: [0, 191, 255],
+			dimgray: [105, 105, 105],
+			dimgrey: [105, 105, 105],
+			dodgerblue: [30, 144, 255],
+			firebrick: [178, 34, 34],
+			floralwhite: [255, 250, 240],
+			forestgreen: [34, 139, 34],
+			fuchsia: [255, 0, 255],
+			gainsboro: [220, 220, 220],
+			ghostwhite: [248, 248, 255],
+			gold: [255, 215, 0],
+			goldenrod: [218, 165, 32],
+			gray: [128, 128, 128],
+			green: [0, 128, 0],
+			greenyellow: [173, 255, 47],
+			grey: [128, 128, 128],
+			honeydew: [240, 255, 240],
+			hotpink: [255, 105, 180],
+			indianred: [205, 92, 92],
+			indigo: [75, 0, 130],
+			ivory: [255, 255, 240],
+			khaki: [240, 230, 140],
+			lavender: [230, 230, 250],
+			lavenderblush: [255, 240, 245],
+			lawngreen: [124, 252, 0],
+			lemonchiffon: [255, 250, 205],
+			lightblue: [173, 216, 230],
+			lightcoral: [240, 128, 128],
+			lightcyan: [224, 255, 255],
+			lightgoldenrodyellow: [250, 250, 210],
+			lightgray: [211, 211, 211],
+			lightgreen: [144, 238, 144],
+			lightgrey: [211, 211, 211],
+			lightpink: [255, 182, 193],
+			lightsalmon: [255, 160, 122],
+			lightseagreen: [32, 178, 170],
+			lightskyblue: [135, 206, 250],
+			lightslategray: [119, 136, 153],
+			lightslategrey: [119, 136, 153],
+			lightsteelblue: [176, 196, 222],
+			lightyellow: [255, 255, 224],
+			lime: [0, 255, 0],
+			limegreen: [50, 205, 50],
+			linen: [250, 240, 230],
+			magenta: [255, 0, 255],
+			maroon: [128, 0, 0],
+			mediumaquamarine: [102, 205, 170],
+			mediumblue: [0, 0, 205],
+			mediumorchid: [186, 85, 211],
+			mediumpurple: [147, 112, 219],
+			mediumseagreen: [60, 179, 113],
+			mediumslateblue: [123, 104, 238],
+			mediumspringgreen: [0, 250, 154],
+			mediumturquoise: [72, 209, 204],
+			mediumvioletred: [199, 21, 133],
+			midnightblue: [25, 25, 112],
+			mintcream: [245, 255, 250],
+			mistyrose: [255, 228, 225],
+			moccasin: [255, 228, 181],
+			navajowhite: [255, 222, 173],
+			navy: [0, 0, 128],
+			oldlace: [253, 245, 230],
+			olive: [128, 128, 0],
+			olivedrab: [107, 142, 35],
+			orange: [255, 165, 0],
+			orangered: [255, 69, 0],
+			orchid: [218, 112, 214],
+			palegoldenrod: [238, 232, 170],
+			palegreen: [152, 251, 152],
+			paleturquoise: [175, 238, 238],
+			palevioletred: [219, 112, 147],
+			papayawhip: [255, 239, 213],
+			peachpuff: [255, 218, 185],
+			peru: [205, 133, 63],
+			pink: [255, 192, 203],
+			plum: [221, 160, 221],
+			powderblue: [176, 224, 230],
+			purple: [128, 0, 128],
+			rebeccapurple: [102, 51, 153],
+			red: [255, 0, 0],
+			rosybrown: [188, 143, 143],
+			royalblue: [65, 105, 225],
+			saddlebrown: [139, 69, 19],
+			salmon: [250, 128, 114],
+			sandybrown: [244, 164, 96],
+			seagreen: [46, 139, 87],
+			seashell: [255, 245, 238],
+			sienna: [160, 82, 45],
+			silver: [192, 192, 192],
+			skyblue: [135, 206, 235],
+			slateblue: [106, 90, 205],
+			slategray: [112, 128, 144],
+			slategrey: [112, 128, 144],
+			snow: [255, 250, 250],
+			springgreen: [0, 255, 127],
+			steelblue: [70, 130, 180],
+			tan: [210, 180, 140],
+			teal: [0, 128, 128],
+			thistle: [216, 191, 216],
+			tomato: [255, 99, 71],
+			turquoise: [64, 224, 208],
+			violet: [238, 130, 238],
+			wheat: [245, 222, 179],
+			white: [255, 255, 255],
+			whitesmoke: [245, 245, 245],
+			yellow: [255, 255, 0],
+			yellowgreen: [154, 205, 50],
                     transparent: [255, 255, 255]
                 };
                 if (colors[hex]) {
@@ -718,8 +863,8 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
                             var angle = x;
                             transform[found[1]] = {
                                 angle: -angle,
-                                x: found[3].length > 0 ? parseFloat(found[3]) : 0,
-                                y: found[4].length > 0 ? parseFloat(found[4]) : 0
+                                x: found[3] ? parseFloat(found[3]) : 0,
+                                y: found[4] ? parseFloat(found[4]) : 0
                             };
                             //transform.translate.x += x;
                             //transform.translate.y += y;
@@ -761,6 +906,13 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 		if(!style.stroke) style.stroke = {};
 		if (inlineStyles.stroke || tag.hasAttribute('stroke')) {
 			style.stroke.color = getColor(inlineStyles.stroke || tag.getAttribute('stroke'));
+		}
+		if((!style.stroke.color ||style.stroke.color =='inherit') && oldstyle.stroke && oldstyle.stroke.color){
+			style.stroke.color = {};
+			style.stroke.color.a = oldstyle.stroke.color.a;
+			style.stroke.color.r = oldstyle.stroke.color.r;
+			style.stroke.color.g = oldstyle.stroke.color.g;
+			style.stroke.color.b = oldstyle.stroke.color.b;
 		}
 
 		// d
@@ -806,22 +958,52 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 
 		if (inlineStyles['stroke-width'] || tag.hasAttribute('stroke-width')) {
 			style.stroke.width = parseFloat(inlineStyles['stroke-width'] || tag.getAttribute('stroke-width'));
+		}else if(oldstyle.stroke && oldstyle.stroke.width != undef){
+			style.stroke.width = oldstyle.stroke.width;
+		}else{
+			style.stroke.width = 1;
 		}
 
 		style.fill = {};
 		if (inlineStyles['fill'] || tag.hasAttribute('fill')) {
 			style.fill.color = getColor(inlineStyles['fill'] || tag.getAttribute('fill'));
+		}else if(oldstyle.fill && oldstyle.fill.color != undef){
+			style.fill.color = oldstyle.fill.color;
+		}else{
+			style.fill.color = getColor('black');
 		}
 
+		if(style.fill.color && style.fill.color.a < 1){
+			style.fill.opacity = style.fill.color.a;
+		}
+		
 		// ca
 		if (inlineStyles['fill-opacity'] || tag.hasAttribute('fill-opacity')) {
-			style.fill.opacity = Math.max(0, Math.min(1, parseFloat(inlineStyles['fill-opacity'] || tag.getAttribute('fill-opacity'))));
+			style.fill.opacity = inlineStyles['fill-opacity'] || tag.getAttribute('fill-opacity');
+			if(!isNaN(style.fill.opacity))
+				style.fill.opacity = Math.max(0, Math.min(1, parseFloat(style.fill.opacity)));
 		}
+		
+		if(style.fill.opacity =='inherit' && oldstyle.fill && oldstyle.fill.opacity != undef){
+			style.fill.opacity = oldstyle.fill.opacity;
+		}
+		
+		if(style.fill.opacity == undef){
+			style.fill.opacity = 1;
+		}
+		
+		if (inlineStyles['fill-rule'] || tag.hasAttribute('fill-rule')) {
+			style.fill.rule = (inlineStyles['fill-rule'] || tag.getAttribute('fill-rule'));
+		}
+		
 
 		if(!style.font)style.font = {};
 		if(oldstyle.font && oldstyle.font.size) style.font.size = oldstyle.font.size;
 		if (inlineStyles['font-size'] || tag.hasAttribute('font-size')) {
 			style.font.size = parseFloat(inlineStyles['font-size'] || tag.getAttribute('font-size'));
+		}
+		if(!style.font.size){
+			style.font.size  = 12;
 		}
 		if(oldstyle.font && oldstyle.font.family) style.font.family = oldstyle.font.family;
 		if (inlineStyles['font-family'] || tag.hasAttribute('font-family')) {
@@ -829,8 +1011,6 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 				fonts = doc.getFontList(),
 				reg = /\s*(['"])?([^,]+)\1\s*,?/g,
 				match;
-			console.log('fonts:', fonts);	
-
 			while(match = reg.exec(font_family)){
 				if(fonts.hasOwnProperty(match[2])){
 					style.font.family = match[2];
@@ -848,8 +1028,7 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 				case '700':
 				case '800':
 				case '900':
-					if(style.font.style == 'bold')style.font.style = 'bolditalic';
-					else style.font.style = 'italic'
+					style.font.style = 'bold'
 					break;
 				case 'normal':
 				case '400':
@@ -894,6 +1073,10 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 			style += 'F';
 			doc.setFillColor(styles.fill.color.r, styles.fill.color.g, styles.fill.color.b);
 			fillOpac = styles.fill.opacity || styles.fill.color.a;
+			if(styles.fill.rule && styles.fill.rule == 'evenodd'){
+				if(style == 'DF') style = 'B*';
+				else style = 'f*';
+			}
 		}
 
 		if(isText){
@@ -932,6 +1115,7 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 	}
 
         var parseNodes = function(doc, tag, base, scale, transform, style) {
+		if(!tag || tag.nodeType == 8/* #comment */ || tag.nodeType == 3/* #text */) return;
 
             transform = getTransforms(tag, transform);
 
@@ -944,8 +1128,8 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
             if (tag.tagName) {
                 switch (tag.tagName.toUpperCase()) {
                 	case 'CIRCLE':
-				var x = parseFloat(getAttribute(tag, 'x', '0'));
-				var y = parseFloat(getAttribute(tag, 'y', '0'));
+				var x = parseFloat(getAttribute(tag, 'cx', '0'));
+				var y = parseFloat(getAttribute(tag, 'cy', '0'));
 				var r = parseFloat(getAttribute(tag, 'r', '0'));
 				if(r === 0) break;
 
@@ -957,8 +1141,8 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 
 				break;
 			case 'ELLIPSE':
-				var x = parseFloat(getAttribute(tag, 'x', '0'));
-				var y = parseFloat(getAttribute(tag, 'y', '0'));
+				var x = parseFloat(getAttribute(tag, 'cx', '0'));
+				var y = parseFloat(getAttribute(tag, 'cy', '0'));
 				var rx = parseFloat(getAttribute(tag, 'rx', '0'));
 				var ry = parseFloat(getAttribute(tag, 'ry', '0'));
 				if (rx === 0 || ry === 0) break;
@@ -995,84 +1179,46 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 				}
 				break;
 			case 'PATH':
-	                        var pathsD = [];
-	                        var d = [];
-	                        var found;
-	                        var reg = /[MmZzLlHhVvCcSsQqTtAa]|[-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?/g;
 	                        var dStr = tag.getAttribute("d");
-	                        while ((found = reg.exec(dStr))) {
-	                            if (d.length > 0 && (found[0] == 'M' || found[0] == 'm')) {
-	                                //pathsD.push(d);
-	                                //d =[];
-	                            }
-	                            d.push(found[0]);
-	                        }
-	                        pathsD.push(d);
-	
-	                        var close = (d[d.length - 1].toLowerCase() == 'z');
-	                        
-	                        setStyle = setStyles(doc, style, scale);
-                        	
-                        	if (style == 'none' || style == '') break;
-				for (var i = 0, _i = pathsD.length; i < _i; i++) {
-					d = pathsD[i];
-					linesargs = convertPathToPDFLinesArgs(d); //.split(' ') 
-					// path start x coordinate
-					var startx =  (linesargs[0] + transform.translate.x) * _scale[0] + base.x // where base.x is upper left X of image
-					// path start y coordinate
-					var starty = (linesargs[1] + transform.translate.y) * _scale[1] + base.y // where base.y is upper left Y of image
-					// the rest of lines are vectors. these will adjust with scale value auto.
+				setStyle = setStyles(doc, style, scale);
 
-					var split = 0,
-						subLineArgs = linesargs[2],
-						subLineArgs2 = [];
-
-					while(subLineArgs.length){
-						var end = '';
-						subLineArgs2 = [];
-						while(subLineArgs.length && subLineArgs[0] !== 'h' && subLineArgs[0] !== 'z'){
-							subLineArgs2.push(subLineArgs.splice(0,1)[0]);
-						}
-						if(subLineArgs.length){
-							end = subLineArgs.splice(0,1)[0];
-						}
-						if(subLineArgs.length){									
-							doc.lines(
-								subLineArgs2 // lines
-								, startx // starting x
-								, starty // starting y
-								, _scale, 
-								null, 
-								(end == 'z')
-							);
-							startx = (subLineArgs[1][0] + transform.translate.x) * _scale[0] + base.x;
-							starty = (subLineArgs[1][1] + transform.translate.y) * _scale[1] + base.y;
-							subLineArgs.splice(0,2);
-						}else{
-							doc.lines(
-								subLineArgs2 // lines
-								, startx // starting x
-								, starty // starting y
-								, _scale, 
-								setStyle, 
-								(end == 'z')
-							);
-							break;
-						}
+				if (setStyle == 'none' || setStyle == '') break;
+				var paths = convertPathToPDFLinesArgs(dStr); //.split(' ') 
+				var xy, path, close;
+				for(var l=0,_l = paths.length; l<_l;l++){
+					path = paths[l];
+					xy = path.splice(0,1)[0];
+					close = false;
+					if(path[path.length-1] === 'z'){
+						close = true;
+						path.splice(path.length-1, 1);
 					}
+					doc.lines(
+						path
+						, (xy[0] + transform.translate.x) * _scale[0] + base.x
+						, (xy[1] + transform.translate.y) * _scale[1] + base.y
+						, _scale
+						, l == _l-1? setStyle:null
+						, close
+					);
+
 				}
                         break;
                     case 'LINE':
                     	setStyle = setStyles(doc, style, scale);
-                        doc.lines(
-                            [
-                                (parseFloat(tag.getAttribute('x2')) + transform.translate.x) * _scale[0] + base.x, (parseFloat(tag.getAttribute('y2')) + transform.translate.y) * _scale[1] + base.y
-                            ] // lines
-
-                            , (parseFloat(tag.getAttribute('x1')) + transform.translate.x) * _scale[0] + base.x // starting x
-                            , (parseFloat(tag.getAttribute('y1')) + transform.translate.y) * _scale[1] + base.y // starting y
-                            , _scale, setStyle
-                        )
+			var x1 = parseFloat(tag.getAttribute('x1')),
+				y1 = parseFloat(tag.getAttribute('y1')),
+				x2 = parseFloat(tag.getAttribute('x2')),
+				y2 = parseFloat(tag.getAttribute('y2'));
+			
+			
+			doc.lines(
+				[[x2 - x1, y2 - y1]]
+				, (x1 + transform.translate.x) * _scale[0] + base.x
+				, (y1 + transform.translate.y) * _scale[1] + base.y
+				, _scale
+				, setStyle
+			);
                         break;
 			case 'POLYGON':
 				var pointsArr = [];
@@ -1166,6 +1312,7 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 					align,
 					!rotate? 0: rotate.angle
                                     );
+                                    xPos += doc.getStringUnitWidth(cn.innerHTML) / _scale[0];
                                 }
                             }
 
