@@ -90,25 +90,20 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 		return svgtext.childNodes[0];
 	}
 
-	
-	function convertPathToPDFLinesArgs(path){
-		'use strict'
-		// we will use 'lines' method call. it needs:
-		// - starting coordinate pair
-		// - array of arrays of vector shifts (2-len for line, 6 len for bezier)
-		// - scale array [horizontal, vertical] ratios
-		// - style (stroke, fill, both)
-
-
-		var pos = 0,
-			paths = [],
-			subPath = [],
-			thisCmd = 'M',
-			lastCmd = '',
-			nextLastCmd = '',
-			regr = /[MmLlHhVvCcSsQqTtAaZz]|-?[0-9]+(?:\.[0-9]+)?(?:[eE][-+][0-9]+)?/g,
-			match,
-			x = 0,
+		function convertPathToPDFLinesArgs(path){
+			'use strict'
+			
+			var pos = 0,
+				lines = [],
+				paths = [],
+				subPath = [],
+				controlPoints = [],
+				thisCmd = 'M',
+				lastCmd = '',
+				nextLastCmd = '',
+				regr = /[MmLlHhVvCcSsQqTtAaZz]|-?[0-9]+(?:\.[0-9]+)?(?:[eE][-+][0-9]+)?/g,
+				match,
+				x = 0,
 			y = 0,
 			dx,
 			dy,
@@ -152,6 +147,7 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 					}
 					vals[0] = cleanNum(next());
 					vals[1] = cleanNum(next());
+					controlPoints.push(vals.slice());
 					dx = vals[0] - x;
 					dy = vals[1] - y;
 					thisCmd = 'm';
@@ -163,12 +159,14 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 					}
 					vals[0] = cleanNum(next(),+x);
 					vals[1] = cleanNum(next(),+y);
+					controlPoints.push(vals.slice());
 					dx = vals[0] - x;
 					dy = vals[1] - y;
 					break;
 				case 'L':
 					vals[0] = cleanNum(next(), -x);
 					vals[1] = cleanNum(next(), -y);
+					controlPoints.push(vals.slice());
 					dx = vals[0];
 					dy = vals[1];
 					thisCmd = 'l';
@@ -176,30 +174,35 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 				case 'l':
 					vals[0] = cleanNum(next());
 					vals[1] = cleanNum(next());
+					controlPoints.push(vals.slice());
 					dx = vals[0];
 					dy = vals[1];
 					break;
 				case 'H':
 					vals[0] = cleanNum(next(), -x);
 					vals[1] = 0;
+					controlPoints.push(vals.slice());
 					thisCmd = 'l';
 					dx = vals[0];
 					break;
 				case 'h':
 					vals[0] = cleanNum(next());
 					vals[1] = 0;
+					controlPoints.push(vals.slice());
 					thisCmd = 'l';
 					dx = vals[0];
 					break;
 				case 'V':
 					vals[0] = 0;
 					vals[1] = cleanNum(next(), -y);
+					controlPoints.push(vals.slice());
 					thisCmd = 'l';
 					dy = vals[1];
 					break;
 				case 'v':
-					vals[0] = x;
+					vals[0] = 0;
 					vals[1] = cleanNum(next());
+					controlPoints.push(vals.slice());
 					thisCmd = 'l';
 					dy = vals[1];
 					break;
@@ -210,6 +213,7 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 					vals[3] = cleanNum(next(), -y);
 					vals[4] = cleanNum(next(), -x);
 					vals[5] = cleanNum(next(), -y);
+					controlPoints.push(vals.slice());
 					dx = vals[4];
 					dy = vals[5];
 					thisCmd = 'c';
@@ -221,6 +225,7 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 					vals[3] = cleanNum(next());
 					vals[4] = cleanNum(next());
 					vals[5] = cleanNum(next());
+					controlPoints.push(vals.slice());
 					dx = vals[4];
 					dy = vals[5];
 					thisCmd = 'c';
@@ -273,72 +278,96 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 					dy = vals[5];
 					break;
 				case 'Q':
-					vals[0] = cleanNum(next(), -x);
-					vals[1] = cleanNum(next(), -y);
-					vals[2] = vals[0];
-					vals[3] = vals[1];
-					vals[4] = cleanNum(next(), -x);
-					vals[5] = cleanNum(next(), -y);
+					var point = [cleanNum(next(), -x), cleanNum(next(), -y)];
+					var end = [cleanNum(next(), -x), cleanNum(next(), -y)];
+						
+					vals[0] = point[0] * 2/3;
+					vals[1] = point[1] * 2/3;
+					vals[2] = end[0] / 3 + vals[0];
+					vals[3] = end[1] / 3 + vals[1];
+					vals[4] = end[0];
+					vals[5] = end[1];						
+					controlPoints.push([point[0],point[1], end[0], end[1]]);
 					thisCmd = 'c';
 					dx = vals[4];
 					dy = vals[5];
 					break;
 				case 'q':
-					vals[0] = cleanNum(next());
-					vals[1] = cleanNum(next());
-					vals[2] = vals[0];
-					vals[3] = vals[1];
-					vals[4] = cleanNum(next());
-					vals[5] = cleanNum(next());
+					var point = [cleanNum(next()), cleanNum(next())];
+					var end = [cleanNum(next()), cleanNum(next())];
+						
+					vals[0] = point[0] * 2/3;
+					vals[1] = point[1] * 2/3;
+					vals[2] = end[0] / 3 + vals[0];
+					vals[3] = end[1] / 3 + vals[1];
+					vals[4] = end[0];
+					vals[5] = end[1];
+					controlPoints.push([point[0],point[1], end[0], end[1]]);
 					thisCmd = 'c';
 					dx = vals[4];
 					dy = vals[5];
 					break;
 				case 'T':
-					var lastPath = subPath[subPath.length - 1];;
+					var lastPath = controlPoints[controlPoints.length - 1];
 					switch (lastCmd) {
-						case 'c':
-						case 'C':
+						case 'q':
+						case 'Q':
 						case 't':
 						case 'T':
-							vals[0] = lastPath[4] - lastPath[2];
-							vals[1] = lastPath[5] - lastPath[3];
+							var point = [lastPath[0], lastPath[3] - lastPath[1]];
+							var end = [cleanNum(next(), -x), cleanNum(next(), -y)];
+							vals[0] = point[0] * 2/3;
+							vals[1] = point[1] * 2/3;
+							vals[2] = end[0] / 3 + vals[0];
+							vals[3] = end[1] / 3 + vals[1];
+							vals[4] = end[0];
+							vals[5] = end[1];
+							controlPoints.push([point[0],point[1], end[0], end[1]]);
+							thisCmd = 'c';
+							dx = vals[4];
+							dy = vals[5];
 							break;
 						default:
-							vals[0] = x;
-							vals[1] = y;
+							vals[0] = cleanNum(next(), -x);
+							vals[1] = cleanNum(next(), -y);
+							controlPoints.push(vals.slice());
+							thisCmd = 'l';
+							dx = vals[0];
+							dy = vals[1];
+							nextLastCmd = 'L';
 							break;
 					}
-					vals[2] = vals[0];
-					vals[3] = vals[1];
-					vals[4] = cleanNum(next(), -x);
-					vals[5] = cleanNum(next(), -y);
-					thisCmd = 'c';
-					dx = vals[4];
-					dy = vals[5];
 					break;
 				case 't':
-					var lastPath = subPath[subPath.length - 1];;
+					var lastPath = controlPoints[controlPoints.length - 1];
 					switch (lastCmd) {
-						case 'c':
-						case 'C':
+						case 'q':
+						case 'Q':
 						case 't':
 						case 'T':
-							vals[0] = lastPath[4] - lastPath[2];
-							vals[1] = lastPath[5] - lastPath[3];
+							var point = [lastPath[0], lastPath[3] - lastPath[1]];
+							var end = [cleanNum(next()), cleanNum(next())];
+							vals[0] = point[0] * 2/3;
+							vals[1] = point[1] * 2/3;
+							vals[2] = end[0] / 3 + vals[0];
+							vals[3] = end[1] / 3 + vals[1];
+							vals[4] = end[0];
+							vals[5] = end[1];
+							controlPoints.push([point[0],point[1], end[0], end[1]]);
+							thisCmd = 'c';
+							dx = vals[4];
+							dy = vals[5];
 							break;
 						default:
-							vals[0] = x;
-							vals[1] = y;
+							vals[0] = cleanNum(next());
+							vals[1] = cleanNum(next());
+							controlPoints.push(vals.slice());
+							thisCmd = 'l';
+							dx = vals[0];
+							dy = vals[1];
+							nextLastCmd = 'l';
 							break;
 					}
-					vals[2] = vals[0];
-					vals[3] = vals[1];
-					vals[4] = cleanNum(next());
-					vals[5] = cleanNum(next());
-					thisCmd = 'c';
-					dx =  vals[4];
-					dy =  vals[5];
 					break;
 				case 'A':
 					vals = arc2curve(
@@ -417,8 +446,6 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 
 	function cleanNum(str, add) {
 		if(!add) add = 0;
-		//str = parseFloat(str) + add;
-		//str = str.toFixed(2);
 		return parseFloat(str) + add;
 	}
 
@@ -519,61 +546,6 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
             }
 
         }
-
-        var workernode = createWorkerNode(document),
-            svgnode = attachSVGToWorkerNode(svgtext, workernode),
-            scale = [1, 1],
-            svgw = parseFloat(svgnode.getAttribute('width')),
-            svgh = parseFloat(svgnode.getAttribute('height')),
-	    pagew = this.internal.pageSize.width,
-	    pageh = this.internal.pageSize.height,
-	    viewBox = svgnode.getAttribute('viewBox')
-	    if(viewBox) viewBox = viewBox.split(/[\s,]+/);
-		if(svgw && svgw.substr(svgw.length-1,1)=='%'){
-			svgw = parseFloat(viewBox[2]);
-		}
-		if(svgh && svgh.substr(svgh.length-1,1)=='%'){
-			svgh = parseFloat(viewBox[3]);
-		}
-
-            if (svgw && svgh) {
-                // setting both w and h makes image stretch to size.
-                // this may distort the image, but fits your demanded size
-                if (w && h) {
-                    scale = [w / svgw, h / svgh]
-                }
-                // if only one is set, that value is set as max and SVG 
-                // is scaled proportionately.
-                else if (w) {
-                    scale = [w / svgw, w / svgw]
-                } else if (h) {
-                    scale = [h / svgh, h / svgh]
-                } else {
-			if (x === undef && y === undef){
-				if(svgw > svgh){
-					x = 0;
-					w = this.internal.pageSize.width;
-					scale = [w/svgw, w/svgw];
-					y = (this.internal.pageSize.height - (svgh * scale[1]))/2;
-				}else if(svgw < svgh) {
-					y = 0;
-					h = this.internal.pageSize.height;
-					scale = [h / svgh, h / svgh];
-					x = (this.internal.pageSize.width - (svgw * scale[0]))/2;
-				}else if(pagew < pageh){
-					x = 0;
-					w = this.internal.pageSize.width;
-					scale = [w/svgw, w/svgw];
-					y = (this.internal.pageSize.height - (svgh * scale[1]))/2;
-				}else{
-					y = 0;
-					h = this.internal.pageSize.height;
-					scale = [h / svgh, h / svgh];
-					x = (this.internal.pageSize.width - (svgw * scale[0]))/2;
-				}
-			}
-                }
-            }
 
         var getColor = function(hex) {
         	
@@ -776,11 +748,10 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
                 }
 
             }
-            //rgba.a = hex.length > 7? parseInt(hex.substring(7,9), 16): 1;  
             return rgba;
         }
 
-        var getTransforms = function(tag, transform) {
+	var getTransforms = function(doc, tag, transform) {
             /**
              * Merge defaults with user options
              * @private
@@ -820,59 +791,95 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
                 }
             }, transform);
 
-            if (!tag.hasAttribute('transform')) return transform;
+		if (!tag.hasAttribute('transform')) return false;
 
             var transformStr = tag.getAttribute('transform');
+		var isTransformed = false;
 
 
             if (transformStr) {
                 var found;
-                var reg = /([a-z]+)\s*\(([-0-9.]+)[ ,]*(?:([-0-9.]+)(?:[ ,]*([-0-9.]+))?)\)/g;
+		var reg = /([a-zA-Z]+)\s*\((-?[0-9.]+)(?:(?:\s*,\s*|\s+)(-?[0-9.]+)(?:(?:\s*,\s*|\s+)(-?[0-9.]+))?(?:(?:\s*,\s*|\s+)(-?[0-9.]+))?(?:(?:\s*,\s*|\s+)(-?[0-9.]+))?(?:(?:\s*,\s*|\s+)(-?[0-9.]+))?)?\)/g;
                 while ((found = reg.exec(transformStr))) {
                     var y = 0;
                     var x = parseFloat(found[2]);
 
                     switch (found[1]) {
                         case 'translate':
-                            if (found[3].length == 0) {
-                                y = 0;
-                            } else {
-                                y = parseFloat(found[3]);
-                            }
-                            y += transform.translate.y;
-                            x += transform.translate.x;
-                            transform[found[1]] = {
-                                x: x,
-                                y: y
-                            };
-                            break;
+				if(!isTransformed){
+					doc.saveTransform();
+					isTransformed = true;
+				}
+				if (found[3] == undef) {
+					y = 0;
+				} else {
+					y = parseFloat(found[3]);
+				}
+							
+				doc.setTranslate(x, y);							
+				break;
                         case 'scale':
-                            if (found[3].length == 0) {
-                                y = x;
-                            } else {
-                                y = parseFloat(found[3]);
-                            }
-                            y *= transform.scale.y;
-                            x *= transform.scale.x;
-                            transform[found[1]] = {
-                                x: x,
-                                y: y
-                            };
-                            break;
+				if(!isTransformed){
+					doc.saveTransform();
+					isTransformed = true;
+				}
+				if (found[3] == undef) {
+					y = x;
+				} else {
+					y = parseFloat(found[3]);
+				}
+							
+				doc.setScale(x, y);
+				break;
                         case 'rotate':
-                            var angle = x;
-                            transform[found[1]] = {
-                                angle: -angle,
-                                x: found[3] ? parseFloat(found[3]) : 0,
-                                y: found[4] ? parseFloat(found[4]) : 0
-                            };
-                            //transform.translate.x += x;
-                            //transform.translate.y += y;
-                            break;
+				if(!isTransformed){
+					doc.saveTransform();
+					isTransformed = true;
+				}
+				var angle = x, y;
+					y = found[4] ? parseFloat(found[4]) : 0;
+					x = found[3] ? parseFloat(found[3]) : 0;
+							
+				doc.setRotate(-angle, x, y);
+				break;
+			case 'skewX':
+				if(!isTransformed){
+					doc.saveTransform();
+					isTransformed = true;
+				}							
+				doc.setSkew(0,x);							
+				break;
+			case 'skewY':
+				if(!isTransformed){
+					doc.saveTransform();
+					isTransformed = true;
+				}
+				doc.setSkew(x,0);							
+				break;
+			case 'matrix':
+				if(!isTransformed){
+					doc.saveTransform();
+					isTransformed = true;
+				}	
+							
+				doc.setTransform(1, 0, 0, 1, 0, doc.internal.pageSize.height);
+				doc.setTransform(
+					x,
+					parseFloat(found[3]),
+					parseFloat(found[4]),
+					parseFloat(found[5]),
+					parseFloat(found[6]),
+					parseFloat(found[7])								
+				);
+				doc.setTransform(1, 0, 0, 1, 0, -doc.internal.pageSize.height);
+							
+				break;
                     }
                 }
-            }
-            return transform;
+	
+		return isTransformed;
+	}
+	return false;
         }
 
         var getAttribute = function(tag, name, defaultVal) {
@@ -896,13 +903,7 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 				}
 			}
 		}
-
-
-		if (inlineStyles['color'] || tag.hasAttribute('color')) {
-			style.color = getColor(inlineStyles['color'] || tag.getAttribute('color'));
-		}
-
-
+		
 		if(!style.stroke) style.stroke = {};
 		if (inlineStyles.stroke || tag.hasAttribute('stroke')) {
 			style.stroke.color = getColor(inlineStyles.stroke || tag.getAttribute('stroke'));
@@ -914,19 +915,7 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 			style.stroke.color.g = oldstyle.stroke.color.g;
 			style.stroke.color.b = oldstyle.stroke.color.b;
 		}
-
-		// d
-		if (inlineStyles['stroke-dasharray'] || tag.hasAttribute('stroke-dasharray')) {
-			tmp = inlineStyles['stroke-dasharray'] || tag.getAttribute('stroke-dasharray');
-			if(tmp !== 'inherit')
-				style.stroke.dasharray = parseArray(tmp, /[0-9]+/g, parseInt);
-		}
-		if (inlineStyles['stroke-dashoffset'] || tag.hasAttribute('stroke-dashoffset')) {
-			tmp = inlineStyles['stroke-dashoffset'] || tag.getAttribute('stroke-dashoffset');
-			if(tmp !== 'inherit')
-				style.stroke.dashoffset = parseInt(tmp);
-		}
-
+		
 		// J
 		if (inlineStyles['stroke-linecap'] || tag.hasAttribute('stroke-linecap')) {
 			style.stroke.linecap = inlineStyles['stroke-linecap'] || tag.getAttribute('stroke-linecap');
@@ -962,6 +951,29 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 			style.stroke.width = oldstyle.stroke.width;
 		}else{
 			style.stroke.width = 1;
+		}
+
+		// d
+		style.stroke.dash = {};
+		var dasharr;
+		if (inlineStyles['stroke-dasharray'] || tag.hasAttribute('stroke-dasharray')) {
+			dasharr = inlineStyles['stroke-dasharray'] || tag.getAttribute('stroke-dasharray');
+			if(dasharr === 'none')
+				style.stroke.dash.array = [];
+			else if(dasharr !== 'inherit')
+				style.stroke.dash.array = parseArray(dasharr, /[0-9]+/g, parseInt);// dasharr.split(/\s*[,\s]\s*/);
+		}
+		if((dasharr == undef || dasharr === 'inherit') && oldstyle.stroke && oldstyle.stroke.dash && oldstyle.stroke.dash.array){
+			style.stroke.dash.array = oldstyle.stroke.dash.array;
+		}
+		var dashphase;
+		if (inlineStyles['stroke-dashoffset'] || tag.hasAttribute('stroke-dashoffset')) {
+			dashphase = inlineStyles['stroke-dashoffset'] || tag.getAttribute('stroke-dashoffset');
+			if(dashphase !== 'inherit')
+				style.stroke.dash.phase = parseInt(dashphase);
+		}
+		if((dashphase == undef || dashphase === 'inherit') && oldstyle.stroke && oldstyle.stroke.dash && oldstyle.stroke.dash.array){
+			style.stroke.dash.phase = oldstyle.stroke.dash.phase;
 		}
 
 		style.fill = {};
@@ -1051,6 +1063,19 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 					break;
 			}
 		}
+		style.opacity = 1;
+		if (inlineStyles['opacity'] || tag.hasAttribute('opacity')) {
+			style.opacity = inlineStyles['opacity'] || tag.getAttribute('opacity');
+		}
+		if(style.opacity == 'inherit'){
+			if(oldstyle.opacity !== undef){
+				style.opacity = oldstyle.opacity;
+			}else{
+				style.opacity = 1;
+			}
+		}else{
+			 style.opacity = Math.max(0, Math.min(1, parseFloat(style.opacity)));
+		}
 
 		return style;
 	}
@@ -1061,18 +1086,19 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 		var fillOpac = null;
 		if (styles.stroke && styles.stroke.color && styles.stroke.color.a > 0 && !isText) {
 			style += 'D';
-			strokeOpac = styles.stroke.opacity || styles.stroke.color.a;
+			strokeOpac = (styles.stroke.opacity || styles.stroke.color.a) * styles.opacity;
 			doc.setDrawColor(styles.stroke.color.r, styles.stroke.color.g, styles.stroke.color.b);
-			doc.setLineWidth(styles.stroke.width * scale[0]);
+			doc.setLineWidth(styles.stroke.width);
 			doc.setLineCap(styles.stroke.linecap||0);
 			doc.setLineJoin(styles.stroke.linejoin || 0);
+			doc.setLineDash(styles.stroke.dash.array || [], styles.stroke.dash.phase||0);
 
 		}
 
 		if (styles.fill.color && styles.fill.color.a > 0  && !isText) {
 			style += 'F';
 			doc.setFillColor(styles.fill.color.r, styles.fill.color.g, styles.fill.color.b);
-			fillOpac = styles.fill.opacity || styles.fill.color.a;
+			fillOpac = (styles.fill.opacity || styles.fill.color.a) * styles.opacity;
 			if(styles.fill.rule && styles.fill.rule == 'evenodd'){
 				if(style == 'DF') style = 'B*';
 				else style = 'f*';
@@ -1080,20 +1106,30 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 		}
 
 		if(isText){
-			if(!styles.color){
-				if(styles.fill && styles.fill.color)styles.color = styles.fill.color;
-				else{styles.color = {r:0, g:0, b:0};}
+				
+			if(styles.stroke && styles.stroke.color && styles.stroke.color.a > 0){
+				style += 'D';
+				doc.setTextStrokeColor(styles.stroke.color.r, styles.stroke.color.g, styles.stroke.color.b);
+				doc.setTextStrokeWidth(styles.stroke.width||0);
 			}
-			doc.setTextColor(styles.color.r, styles.color.g, styles.color.b);
+				
+			if(styles.fill && styles.fill.color)styles.color = styles.fill.color;
+			else{styles.color = {r:0, g:0, b:0, a:1};}
+			if(styles.color.a > 0){
+				doc.setTextColor(styles.color.r, styles.color.g, styles.color.b);
+				style += 'F';
+			}
 			var pdfFontSize = 16;
 			if(styles.font && styles.font.size){
 				pdfFontSize = styles.font.size;
 			}
-			pdfFontSize *= scale[0] * 3;
+			//pdfFontSize *= scale[0] * 3;
+			pdfFontSize *= 2.85;
 			doc.setFontSize(pdfFontSize);
 			if(styles.font && styles.font.family){
 				doc.setFont(styles.font.family, styles.font.style)
 			}
+				
 
 		}
 
@@ -1117,9 +1153,9 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
         var parseNodes = function(doc, tag, base, scale, transform, style) {
 		if(!tag || tag.nodeType == 8/* #comment */ || tag.nodeType == 3/* #text */) return;
 
-            transform = getTransforms(tag, transform);
+		var transformed = getTransforms(doc, tag, transform, scale, base);
 
-            var _scale = [scale[0] * transform.scale.x, scale[1] * transform.scale.y];
+		var _scale = [scale[0],scale[1]];
             var setStyle;
             
             style = getStyles(doc, tag, style);
@@ -1133,10 +1169,10 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 				var r = parseFloat(getAttribute(tag, 'r', '0'));
 				if(r === 0) break;
 
-				x = (x + transform.translate.x) * _scale[0] + base.x;
-				y = (y + transform.translate.y) * _scale[1] + base.y;
-				r = r * scale[0];
-				setStyle = setStyle(doc, style, scale);
+				//x = (x + transform.translate.x) * _scale[0] + base.x;
+				//y = (y + transform.translate.y) * _scale[1] + base.y;
+				//r = r * scale[0];
+				setStyle = setStyles(doc, style, scale);
 				doc.circle(x, y, r, setStyle);
 
 				break;
@@ -1147,10 +1183,10 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 				var ry = parseFloat(getAttribute(tag, 'ry', '0'));
 				if (rx === 0 || ry === 0) break;
 
-				x = (x + transform.translate.x) * _scale[0] + base.x;
-				y = (y + transform.translate.y) * _scale[1] + base.y;
-				rx = rx * scale[0];
-				ry = ry * scale[1];
+				//x = (x + transform.translate.x) * _scale[0] + base.x;
+				//y = (y + transform.translate.y) * _scale[1] + base.y;
+				//rx = rx * scale[0];
+				//ry = ry * scale[1];
 				setStyle = setStyles(doc, style, scale);
 				doc.ellipse(x, y, rx, ry, setStyle);
 
@@ -1158,28 +1194,28 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
                     	case 'RECT':
 	                        var x = parseFloat(getAttribute(tag, 'x', '0'));
 	                        var y = parseFloat(getAttribute(tag, 'y', '0'));
-	                        var rx = parseFloat(getAttribute(tag, 'rx', '0'));
-	                        var ry = parseFloat(getAttribute(tag, 'ry', '0'));
+				var rx = parseFloat(getAttribute(tag, 'rx', '-1'));
+				var ry = parseFloat(getAttribute(tag, 'ry', '-1'));
 	                        var width = parseFloat(getAttribute(tag, 'width', '0'));
 	                        var height = parseFloat(getAttribute(tag, 'height', '0'));
 	                        if (height === 0 || width === 0) break;
 				
-				x = (x + transform.translate.x) * _scale[0] + base.x;
-				y = (y + transform.translate.y) * _scale[1] + base.y;
-				rx = rx * scale[0];
-				ry = ry * scale[1];
-				width = width * scale[0];
-				height = height * scale[1];
 
 				setStyle = setStyles(doc, style, scale);
-				if (rx === 0 || ry === 0) {
+				if(rx === -1 && ry === -1){
 					doc.rect(x, y, width, height, setStyle);
 				} else {
+					if(rx===-1){
+						rx = ry;
+					}else if(ry===-1){
+						ry = rx;
+					}
 					doc.roundedRect(x, y, width, height, rx, ry, setStyle);
 				}
 				break;
 			case 'PATH':
 	                        var dStr = tag.getAttribute("d");
+				if(dStr === null) break;
 				setStyle = setStyles(doc, style, scale);
 
 				if (setStyle == 'none' || setStyle == '') break;
@@ -1195,30 +1231,14 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 					}
 					doc.lines(
 						path
-						, (xy[0] + transform.translate.x) * _scale[0] + base.x
-						, (xy[1] + transform.translate.y) * _scale[1] + base.y
-						, _scale
+						, xy[0]
+						, xy[1]
+						, [1,1]
 						, l == _l-1? setStyle:null
 						, close
 					);
 
 				}
-                        break;
-                    case 'LINE':
-                    	setStyle = setStyles(doc, style, scale);
-			var x1 = parseFloat(tag.getAttribute('x1')),
-				y1 = parseFloat(tag.getAttribute('y1')),
-				x2 = parseFloat(tag.getAttribute('x2')),
-				y2 = parseFloat(tag.getAttribute('y2'));
-			
-			
-			doc.lines(
-				[[x2 - x1, y2 - y1]]
-				, (x1 + transform.translate.x) * _scale[0] + base.x
-				, (y1 + transform.translate.y) * _scale[1] + base.y
-				, _scale
-				, setStyle
-			);
                         break;
 			case 'POLYGON':
 				var pointsArr = [];
@@ -1228,37 +1248,68 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 				var match;
 				var i=0;
 
-				function doScale(x, y, transform, scale, base){
-					return [(x + transform.translate.x) * scale[0] + base.x,
-							(y + transform.translate.y) * scale[1] + base.y];
-				}
-
 				while(match = reg.exec(points)){
 					pointsArr.push([parseFloat(match[1]), parseFloat(match[2])]);
 					if(!pointsArrScaled.length){
-						pointsArrScaled.push(doScale(pointsArr[i][0],pointsArr[i][1],transform, _scale, base));
+						pointsArrScaled.push([pointsArr[i][0],pointsArr[i][1]]);
 					}else{
-						pointsArrScaled.push(doScale(pointsArr[i][0] - pointsArr[i-1][0],pointsArr[i][1] - pointsArr[i-1][1],transform, _scale, base));
+						pointsArrScaled.push([pointsArr[i][0] - pointsArr[i-1][0],pointsArr[i][1] - pointsArr[i-1][1]]);
 					}
 					i++;
 				}
 
 				setStyle = setStyles(doc, style, scale);
-				var xy = pointsArrScaled.splice(0,1);
-				doc.lines(xy[0], xy[1], pointsArrScaled, _scale, setStyle);
+				var xy = pointsArrScaled.splice(0,1)[0];
+				doc.lines(xy[0], xy[1], pointsArrScaled, [1,1], setStyle, true);
 
 
+				break;
+			case 'POLYLINE':
+				var pointsArr = [];
+				var pointsArrScaled = [];
+				var points = tag.getAttribute('points');
+				var reg = /(-?[0-9]+(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?)(?:,\s*|\s+)(-?[0-9]+(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?)/g;
+				var match;
+				var i=0;
+
+				while(match = reg.exec(points)){
+					pointsArr.push([parseFloat(match[1]), parseFloat(match[2])]);
+					if(!pointsArrScaled.length){
+						pointsArrScaled.push([pointsArr[i][0],pointsArr[i][1]]);
+					}else{
+						pointsArrScaled.push([pointsArr[i][0] - pointsArr[i-1][0],pointsArr[i][1] - pointsArr[i-1][1]]);
+					}
+					i++;
+				}
+
+				setStyle = setStyles(doc, style, scale);
+				var xy = pointsArrScaled.splice(0,1)[0];
+				doc.lines(xy[0], xy[1], pointsArrScaled, [1,1], setStyle, false);
+
+
+				break;
+			case 'LINE':
+				setStyle = setStyles(doc, style, scale);
+				var x1 = parseFloat(tag.getAttribute('x1')),
+					y1 = parseFloat(tag.getAttribute('y1')),
+					x2 = parseFloat(tag.getAttribute('x2')),
+					y2 = parseFloat(tag.getAttribute('y2'));
+						
+						
+				doc.lines(
+					[[x2 - x1, y2 - y1]]
+					//, (x1 + transform.translate.x) * _scale[0] + base.x
+					//, (y1 + transform.translate.y) * _scale[1] + base.y
+					, x1
+					, y1
+					, [1,1]
+					, setStyle
+				);
 				break;
                     case 'TEXT':
                         if (!tag.textContent || tag.textContent.length === 0) break;
 
                         var rotate;
-                        if (transform.rotate.angle != 0) {
-                            rotate = transform.rotate;
-                            rotate.x = (rotate.x + transform.translate.x) * _scale[0] + base.x;
-                            rotate.y = (rotate.y + transform.translate.y) * _scale[1] + base.y;
-                        }
-
 			setStyle = setStyles(doc, style, scale, true);
 
                         var xPos, yPos, xOffset = 0,
@@ -1278,19 +1329,48 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
                             }
                         }
 
-                        xPos = tag.hasAttribute('x') ? parseFloat(tag.getAttribute('x')) - xOffset : -offset;
+			xPos = tag.hasAttribute('x') ? parseFloat(tag.getAttribute('x')) - xOffset : -xOffset;
                         yPos = tag.hasAttribute('y') ? parseFloat(tag.getAttribute('y')) : 0;
+			var flags = {};
+			if(setStyle){
+				switch(setStyle){
+					case 'D':
+						flags.stroke = 1;
+						break;
+					case 'DF':
+						flags.stroke = 2;
+						break;
+					case 'F':
+					default:
+						flags.stroke = 0;
+						break;
+				}
+				//flags.stroke = true;
+			}
+			var xmlSpace = getAttribute(tag, 'xml:space', 'default');
 
                         if (tag.childNodes.length > 0) {
                             for (var c = 0, _c = tag.childNodes.length; c < _c; c++) {
                                 var cn = tag.childNodes[c];
+				var text;
                                 if (cn.nodeType === 3) {
                                     // #text
-                                    doc.text(
-                                        cn.data, (xPos + transform.translate.x) * _scale[0] + base.x, (yPos + transform.translate.y) * _scale[1] + base.y,
-                                        align,
-                                        !rotate? 0: rotate.angle
-                                    );
+					text = cn.data;
+					if(xmlSpace==='default'){
+						text = text.replace(/\s+/g, ' ').trim();
+					}else{
+						text = text.replace(/\s/g, ' ');
+					}
+					doc.text(
+						text
+						//, (xPos + transform.translate.x) * _scale[0] + base.x
+						//, (yPos + transform.translate.y) * _scale[1] + base.y
+						, xPos
+						, yPos
+						, flags
+						, align
+						, !rotate? 0: rotate.angle
+	                                    );
                                 } else if (cn.nodeName == 'tspan') {
                                     var cx = xPos;
                                     var cy = yPos;
@@ -1306,13 +1386,24 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
                                     if (cn.hasAttribute('dy')) {
                                         cy = cy + parseFloat(cn.getAttribute('dy'));
                                     }
-                                    doc.text(cn.innerHTML, 
-					(cx + transform.translate.x) * _scale[0] + base.x,
-					(cy + transform.translate.y) * _scale[1] + base.y,
-					align,
-					!rotate? 0: rotate.angle
-                                    );
-                                    xPos += doc.getStringUnitWidth(cn.innerHTML) / _scale[0];
+				text = cn.innerHTML||cn.textContent;
+				if(xmlSpace==='default'){
+					text = text.replace(/\s+/g, ' ').trim();
+				}else{
+					text = text.replace(/\s/g, ' ');
+				}
+				doc.text(
+					text
+					//(cx + transform.translate.x) * _scale[0] + base.x,
+					//(cy + transform.translate.y) * _scale[1] + base.y,
+					, cx
+					, cy
+					, flags
+					, !rotate? 0: rotate.angle
+					, align
+				);
+				xPos += doc.getStringUnitWidth(text) * doc.internal.getFontSize() * 0.8;
+				yPos = cy;
                                 }
                             }
 
@@ -1321,9 +1412,11 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
                         break;
                     case 'G':
 		    case 'SVG':
+		case 'A':
+			if(style.opacity === 0) break;
                         var i, l, tmp, items = tag.childNodes
                         for (i = 0, l = items.length; i < l; i++) {
-                            tmp = items[i]
+                            tmp = items[i];
                             parseNodes(doc, tmp, base, _scale, transform, style);
                         }
                         break;
@@ -1334,28 +1427,102 @@ jsPDFAPI.addSVG = function(svgtext, x, y, w, h) {
 
                         }
                         break;
+		default:
+			console.log('unknown element:', tag.tagName, tag);
                 }
             }
+		if(transformed) doc.resetTransform();
         }
 
-        var defs = {};
+	var workernode = createWorkerNode(document),
+		svgnode = attachSVGToWorkerNode(svgtext, workernode),
+		scale = [1, 1],
+		svgw = svgnode.getAttribute('width'),
+		svgh = svgnode.getAttribute('height'),
+		pagew = this.internal.pageSize.width,
+		pageh = this.internal.pageSize.height,
+		viewBox = svgnode.getAttribute('viewBox')
+		
+	if(viewBox) viewBox = viewBox.split(/[\s,]+/);
+	if(!svgw || svgw && svgw.substr(svgw.length-1,1)=='%'){
+		svgw = parseFloat(viewBox[2]) - parseFloat(viewBox[0]);
+	}else{
+		svgw = parseFloat(svgw);
+	}
+	if(!svgh || svgh && svgh.substr(svgh.length-1,1)=='%'){
+		svgh = parseFloat(viewBox[3]) - parseFloat(viewBox[1]);
+	}else{
+		svgh = parseFloat(svgh);
+	}
 
-        var i, l, tmp, linesargs, items = svgnode.childNodes, baseStyle = getStyles(this, svgnode);
-        for (i = 0, l = items.length; i < l; i++) {
-            tmp = items[i];
-            if (tmp.nodeType === 3) continue;
 
-            parseNodes(this, tmp, {
-                x: x,
-                y: y
-            }, scale, {}, baseStyle);
-        }
+	if (svgw && svgh) {
+		// setting both w and h makes image stretch to size.
+		// this may distort the image, but fits your demanded size
+		if (w && h) {
+			scale = [w / svgw, h / svgh]
+		}
+		// if only one is set, that value is set as max and SVG 
+		// is scaled proportionately.
+		else if (w) {
+			scale = [w / svgw, w / svgw]
+		} else if (h) {
+			scale = [h / svgh, h / svgh]
+		} else {
+			if (x === undef && y === undef){
 
+				console.log('this.internal.pageSize.width:', this.internal.pageSize.width);
+				console.log('this.internal.pageSize.height:', this.internal.pageSize.height);
+				console.log('svgw:', svgw);
+				console.log('svgh:', svgh);
+				scale = Math.min(this.internal.pageSize.width / svgw, this.internal.pageSize.height / svgh);
+				scale = [scale,scale];
+					
+				x = (this.internal.pageSize.width - svgw * scale[0]) / 2;
+				y = (this.internal.pageSize.height - svgh * scale[1]) / 2  ;
+				x = 0; y= 0;
+	console.log('y:', y);
+			}
+		}
+	}
 
-        // clean up
-        // workernode.parentNode.removeChild(workernode)
+	//y += this.internal.pageSize.height / scale[1];
 
-        return this
-    }
+	console.log('scale:', scale);
+	console.log('x:', x);
+	console.log('y:', y);
+	var defs = {};
+
+	var i, l, tmp, linesargs, items = svgnode.childNodes, baseStyle;
+		
+	this.saveTransform();
+	this.setTranslate(x, y);
+	this.setScale(scale[0], scale[1]);
+		
+	if(viewBox){
+		this.rect(parseFloat(viewBox[0]), parseFloat(viewBox[1]), parseFloat(viewBox[2]), parseFloat(viewBox[3]), null);
+		this.clip();
+	}
+	this.saveTransform();
+	baseStyle = getStyles(this, svgnode);
+		
+	for (i = 0, l = items.length; i < l; i++) {
+		tmp = items[i];
+		if (tmp.nodeType === 3) continue;
+
+		parseNodes(this, tmp, {
+			x: x,
+			y: y
+		}, scale, {}, baseStyle);
+	}
+
+	this.resetTransform();
+	this.resetTransform();
+
+	// clean up
+	// workernode.parentNode.removeChild(workernode)
+
+	return this
+}
 
 })(jsPDF.API);
