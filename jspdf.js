@@ -166,6 +166,8 @@ var jsPDF = (function(global) {
 		var format_as_string = ('' + format).toLowerCase(),
 			compress = !!compressPdf && typeof Uint8Array === 'function',
 			textColor            = options.textColor  || '0 g',
+			textStrokeColor      = options.textStrokeColor  || '0 G',
+			textStrokeWidth      = options.textStrokeWidth  || 0,
 			drawColor            = options.drawColor  || '0 G',
 			activeFontSize       = options.fontSize   || 16,
 			lineHeightProportion = options.lineHeight || 1.15,
@@ -779,25 +781,22 @@ var jsPDF = (function(global) {
 				fontName = fontName.toLowerCase();
 			}
 			switch(fontName){
-			case 'helvetica':
 			case 'sans-serif':
 			case 'verdana':
 			case 'arial':
 				fontName = 'helvetica';
 				break;
-			case 'courier':
 			case 'fixed':
 			case 'monospace':
 			case 'terminal':
 				fontName = 'courier';
 				break;
-			case 'times':
 			case 'serif':
 			case 'cursive':
 			case 'fantasy':
-				default:
 				fontName = 'times';
 				break;
+			default:
 			}
 
 			try {
@@ -1196,17 +1195,14 @@ var jsPDF = (function(global) {
 
 			var strokeOption = '';
 			var pageContext = this.internal.getCurrentPageInfo().pageContext;
-			if (true === flags.stroke){
-				if (pageContext.lastTextWasStroke !== true){
-					strokeOption = '1 Tr\n';
-					pageContext.lastTextWasStroke = true;
+			if (!isNaN(flags.stroke) && [0,1,2,3,4,5,6,7].indexOf(flags.stroke) > -1) {
+				if (pageContext.lastTextWasStroke !== flags.stroke) {
+					strokeOption = flags.stroke+' Tr\n';
+					pageContext.lastTextWasStroke = flags.stroke;
 				}
-			}
-			else{
-				if (pageContext.lastTextWasStroke){
-					strokeOption = '0 Tr\n';
+				if([1,2,5,6].indexOf(flags.stroke) > -1){
+					strokeOption += textStrokeWidth.toFixed(2)+' w\n'+textStrokeColor+'\n';	
 				}
-				pageContext.lastTextWasStroke = false;
 			}
 
 			if (typeof this._runningPageHeight === 'undefined'){
@@ -1254,16 +1250,13 @@ var jsPDF = (function(global) {
 						throw new Error('Unrecognized alignment option, use "center" or "right".');
 					}
 					prevX = x;
-					text = da[0] + ") Tj\n";
-					for ( i = 1, len = da.length ; i < len; i++ ) {
+					text = da[0];
+					for (var i = 1, len = da.length ; i < len; i++ ) {
 						var delta = maxLineLength - lineWidths[i];
 						if( align === "center" ) delta /= 2;
 						// T* = x-offset leading Td ( text )
-						text += ( ( left - prevX ) + delta ) + " -" + leading + " Td (" + da[i];
+						text += ") Tj\n" + ( ( left - prevX ) + delta ) + " -" + leading + " Td (" + da[i];
 						prevX = left + delta;
-						if( i < len - 1 ) {
-							text += ") Tj\n";
-						}
 					}
 				} else {
 					text = da.join(") Tj\nT* (");
@@ -1492,6 +1485,8 @@ var jsPDF = (function(global) {
 		 */
 		API.roundedRect = function(x, y, w, h, rx, ry, style) {
 			var MyArc = 4 / 3 * (Math.SQRT2 - 1);
+			rx = Math.min(rx, w/2);
+			ry = Math.min(ry, h/2);
 			this.lines(
 				[
 					[(w - 2 * rx), 0],
@@ -1715,6 +1710,20 @@ var jsPDF = (function(global) {
 		};
 
 		/**
+		 * Sets line width for upcoming lines.
+		 *
+		 * @param {Number} width Line width (in units declared at inception of PDF document)
+		 * @function
+		 * @returns {jsPDF}
+		 * @methodOf jsPDF#
+		 * @name setLineWidth
+		 */
+		API.setTextStrokeWidth = function(width) {
+			textStrokeWidth = width * k;
+			return this;
+		};
+
+		/**
 		 * Sets the stroke color for upcoming elements.
 		 *
 		 * Depending on the number of arguments given, Gray, RGB, or CMYK
@@ -1882,6 +1891,35 @@ var jsPDF = (function(global) {
 		};
 
 		/**
+		 * Sets the text color for upcoming elements.
+		 * If only one, first argument is given,
+		 * treats the value as gray-scale color value.
+		 *
+		 * @param {Number} r Red channel color value in range 0-255 or {String} r color value in hexadecimal, example: '#FFFFFF'
+		 * @param {Number} g Green channel color value in range 0-255
+		 * @param {Number} b Blue channel color value in range 0-255
+		 * @function
+		 * @returns {jsPDF}
+		 * @methodOf jsPDF#
+		 * @name setTextStrokeColor
+		 */
+		API.setTextStrokeColor = function(r, g, b) {
+			if ((typeof r === 'string') && /^#[0-9A-Fa-f]{6}$/.test(r)) {
+				var hex = parseInt(r.substr(1), 16);
+				r = (hex >> 16) & 255;
+				g = (hex >> 8) & 255;
+				b = (hex & 255);
+			}
+
+			if ((r === 0 && g === 0 && b === 0) || (typeof g === 'undefined')) {
+				textStrokeColor = f3(r / 255) + ' G';
+			} else {
+				textStrokeColor = [f3(r / 255), f3(g / 255), f3(b / 255), 'RG'].join(' ');
+			}
+			return this;
+		};
+
+		/**
 		 * Is an Object providing a mapping from human-readable to
 		 * integer flag values designating the varieties of line cap
 		 * and join styles.
@@ -1944,6 +1982,25 @@ var jsPDF = (function(global) {
 			}
 			lineJoinID = id;
 			out(id + ' j');
+
+			return this;
+		};
+
+		/**
+		 * Sets the line join styles
+		 * See {jsPDF.CapJoinStyles} for variants
+		 *
+		 * @param {String|Number} style A string or number identifying the type of line join
+		 * @function
+		 * @returns {jsPDF}
+		 * @methodOf jsPDF#
+		 * @name setLineJoin
+		 */
+		API.setLineDash = function(array, phase) {
+			if(isNaN(phase))
+				throw new Error('Line Dash Phase must be numeric');
+			
+			out('['+array.join(' ')+'] '+phase  + ' d');
 
 			return this;
 		};
